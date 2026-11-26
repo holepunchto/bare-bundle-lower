@@ -1,0 +1,16 @@
+[package]
+name = "bare-bundle-lower"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["staticlib"]
+path = "src/lib.rs"
+
+[dependencies]
+swc_core = { version = "=84.1.1", features = ["common", "ecma_ast", "ecma_parser", "ecma_codegen", "ecma_visit", "ecma_utils", "ecma_transforms", "ecma_transforms_module", "ecma_preset_env", "ecma_helpers_inline"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[profile.release]
+lto = true
+codegen-units = 1

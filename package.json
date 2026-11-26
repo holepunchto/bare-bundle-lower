@@ -1,0 +1,75 @@
+{
+  "name": "bare-bundle-lower",
+  "version": "0.0.0",
+  "description": "Lower the syntax of the modules of a Bare bundle",
+  "exports": {
+    "./package": "./package.json",
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    }
+  },
+  "imports": {
+    "#binding": {
+      "bare": "./lib/binding/bare.js",
+      "node": "./lib/binding/node.js"
+    }
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "binding.c",
+    "src",
+    "Cargo.toml",
+    "Cargo.lock",
+    "CMakeLists.txt",
+    "lib",
+    "prebuilds"
+  ],
+  "addon": true,
+  "scripts": {
+    "format": "prettier --write . && lunte --fix",
+    "lint": "prettier --check . && lunte",
+    "test": "npm run test:bare && npm run test:node",
+    "test:bare": "brittle-bare --coverage test.js",
+    "test:node": "brittle-node --coverage test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/holepunchto/bare-bundle-lower.git"
+  },
+  "author": "Holepunch",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/holepunchto/bare-bundle-lower/issues"
+  },
+  "homepage": "https://github.com/holepunchto/bare-bundle-lower#readme",
+  "engines": {
+    "bare": ">=1.0.0",
+    "node": "^22.21.0 || >=24.9.0"
+  },
+  "dependencies": {
+    "bare-bundle": "^1.12.0",
+    "require-addon": "^1.0.2"
+  },
+  "devDependencies": {
+    "acorn": "^8.15.0",
+    "bare-bundle-compile": "^1.2.3",
+    "brittle": "^3.1.1",
+    "cmake-bare": "^1.1.7",
+    "cmake-cargo": "^0.1.3",
+    "cmake-fetch": "^1.5.5",
+    "cmake-napi": "^1.5.0",
+    "lunte": "^1.8.0",
+    "prettier": "^3.4.1",
+    "prettier-config-holepunch": "^2.0.0"
+  },
+  "peerDependencies": {
+    "bare-buffer": "*"
+  },
+  "peerDependenciesMeta": {
+    "bare-buffer": {
+      "optional": true
+    }
+  }
+}
