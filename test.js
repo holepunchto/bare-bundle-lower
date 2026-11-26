@@ -59,18 +59,81 @@ test('lowered bundle is ES5 and evaluates to the same exports', async (t) => {
   t.is(await exports.later, 6)
 })
 
-test('ES modules are converted to CommonJS only for targets without ES modules', (t) => {
+test('ES modules are converted to CommonJS only with the cjs format', (t) => {
   const bundle = new Bundle().write('/main.mjs', 'export const value = a ?? b', {
     main: true
   })
 
   const es5 = lower(bundle, { target: 'es5' })
   const es2015 = lower(bundle, { target: 'es2015' })
+  const es2022 = lower(bundle, { target: 'es2022', format: 'cjs' })
 
   t.is(es5.type('/main.mjs'), 'script')
   t.is(es2015.type('/main.mjs'), null)
+  t.is(es2022.type('/main.mjs'), 'script')
   t.snapshot(sources(es5))
   t.snapshot(sources(es2015))
+  t.snapshot(sources(es2022))
+})
+
+test('import() is converted to require() in every module with the cjs format', async (t) => {
+  const bundle = new Bundle()
+    .write(
+      '/main.cjs',
+      `
+      module.exports = {
+        required: require('required'),
+        imported: Promise.all([import('imported'), import('./module.mjs')])
+      }
+      `,
+      {
+        main: true,
+        imports: {
+          required: { require: '/dep.cjs', import: '/wrong.cjs' },
+          imported: { require: '/wrong.cjs', import: '/dep.cjs' },
+          './module.mjs': '/module.mjs'
+        }
+      }
+    )
+    .write('/module.mjs', "export const value = () => import('./dep.cjs')", {
+      imports: { './dep.cjs': '/dep.cjs' }
+    })
+    .write('/dep.cjs', 'module.exports = 1')
+    .write('/wrong.cjs', 'module.exports = 0')
+
+  const lowered = lower(bundle, { target: 'esnext', format: 'cjs' })
+
+  t.is(lowered.type('/main.cjs'), 'script')
+  t.alike(lowered.resolutions['/main.cjs'], {
+    required: { require: '/dep.cjs', import: '/wrong.cjs' },
+    imported: { require: '/dep.cjs' },
+    './module.mjs': '/module.mjs'
+  })
+
+  const { exports } = eval(compile(lowered))
+
+  t.is(exports.required, 1)
+
+  const [imported, module] = await exports.imported
+
+  t.is(imported.default, 1)
+  t.is((await module.value()).default, 1)
+})
+
+test('import attributes are passed on to require() when converting to CommonJS', (t) => {
+  const bundle = new Bundle().write(
+    '/main.mjs',
+    `
+    import text from './file.txt' with { type: 'text' }
+    export * from './data.json' with { type: 'json' }
+    export { default as bytes } from './file.bin' with { type: 'binary' }
+    export const lazy = () => import('./other.json', { with: { type: 'json' } })
+    export { text }
+    `,
+    { main: true }
+  )
+
+  t.snapshot(sources(lower(bundle)))
 })
 
 test('converted modules resolve their imports with the require condition', (t) => {
@@ -170,10 +233,12 @@ test('assets and files that are not modules are untouched', (t) => {
   t.is(lowered.type('/template.js'), 'text')
 })
 
-test('unknown targets are rejected', (t) => {
+test('unknown targets and formats are rejected', (t) => {
   const bundle = new Bundle().write('/main.js', 'module.exports = 1', { main: true })
 
   t.exception.all(() => lower(bundle, { target: 'es4' }), TypeError)
+  t.exception.all(() => lower(bundle, { format: 'amd' }), TypeError)
+  t.exception.all(() => lower(bundle, { target: 'es5', format: 'esm' }), TypeError)
 })
 
 function sources(bundle) {
