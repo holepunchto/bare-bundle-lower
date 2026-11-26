@@ -17,6 +17,7 @@ pub struct bare_bundle_lower_string_t {
 #[repr(C)]
 pub struct bare_bundle_lower_options_t {
     target: bare_bundle_lower_string_t,
+    format: bare_bundle_lower_string_t,
 }
 
 #[repr(C)]
@@ -65,7 +66,16 @@ pub unsafe extern "C" fn bare_bundle_lower(
             )]);
         };
 
-        lower::lower(slice_or_empty(input, len), &Options { target })
+        let format = to_string(&options.format);
+
+        let Some(format) = lower::parse_format(&format) else {
+            return Err(vec![Diagnostic::new(
+                "",
+                format!("Unknown format '{format}'"),
+            )]);
+        };
+
+        lower::lower(slice_or_empty(input, len), &Options { target, format })
     }));
 
     let (data, diagnostics) = match outcome {

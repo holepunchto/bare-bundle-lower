@@ -18,6 +18,13 @@ use crate::commonjs;
 
 pub struct Options {
     pub target: EsVersion,
+    pub format: Format,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum Format {
+    Esm,
+    Cjs,
 }
 
 pub struct Diagnostic {
@@ -56,12 +63,20 @@ pub fn parse_target(target: &str) -> Option<EsVersion> {
     })
 }
 
+pub fn parse_format(format: &str) -> Option<Format> {
+    match format {
+        "esm" => Some(Format::Esm),
+        "cjs" => Some(Format::Cjs),
+        _ => None,
+    }
+}
+
 pub fn lower(input: &[u8], options: &Options) -> Result<Vec<u8>, Vec<Diagnostic>> {
     let mut bundle = Bundle::parse(input).map_err(|message| vec![Diagnostic::new("", message)])?;
 
     let assets: Vec<String> = bundle.assets().map(String::from).collect();
 
-    let mut converted = Vec::new();
+    let mut requires = Vec::new();
     let mut diagnostics = Vec::new();
 
     for file in &mut bundle.files {
@@ -78,11 +93,18 @@ pub fn lower(input: &[u8], options: &Options) -> Result<Vec<u8>, Vec<Diagnostic>
             continue;
         };
 
-        match lower_module(source, kind, options.target) {
+        match lower_module(source, kind, options) {
             Ok(lowered) => {
-                if lowered.converted {
+                // A file without a recorded type might still load as an ES
+                // module, such as through the package "type" field.
+                if options.format == Format::Cjs {
                     file.kind = Some("script".into());
-                    converted.push(file.url.clone());
+                }
+
+                if lowered.converted {
+                    requires.push((file.url.clone(), None));
+                } else if !lowered.dynamic_imports.is_empty() {
+                    requires.push((file.url.clone(), Some(lowered.dynamic_imports)));
                 }
 
                 file.data = Data::Owned(lowered.code.into_bytes());
@@ -102,8 +124,8 @@ pub fn lower(input: &[u8], options: &Options) -> Result<Vec<u8>, Vec<Diagnostic>
         return Err(diagnostics);
     }
 
-    for url in converted {
-        bundle.resolve_imports_as_requires(&url);
+    for (url, specifiers) in requires {
+        bundle.resolve_imports_as_requires(&url, specifiers.as_deref());
     }
 
     Ok(bundle.serialize())
@@ -142,11 +164,14 @@ fn kind_for_extension(url: &str) -> Option<Kind> {
 struct Lowered {
     code: String,
     converted: bool,
+    dynamic_imports: Vec<String>,
 }
 
 type Errors = Vec<(u32, u32, String)>;
 
-fn lower_module(source: &str, kind: Kind, target: EsVersion) -> Result<Lowered, Errors> {
+fn lower_module(source: &str, kind: Kind, options: &Options) -> Result<Lowered, Errors> {
+    let Options { target, format } = *options;
+
     let cm: Lrc<SourceMap> = Default::default();
     let file = cm.new_source_file(FileName::Anon.into(), source.to_owned());
     let comments = SingleThreadedComments::default();
@@ -200,14 +225,17 @@ fn lower_module(source: &str, kind: Kind, target: EsVersion) -> Result<Lowered, 
         }
     };
 
-    let convert = program.is_module() && target < EsVersion::Es2015;
+    let convert = program.is_module() && format == Format::Cjs;
 
-    GLOBALS.set(&Globals::new(), || {
+    let dynamic_imports = GLOBALS.set(&Globals::new(), || {
         HELPERS.set(&Helpers::new(false), || {
             let unresolved_mark = Mark::new();
             let top_level_mark = Mark::new();
 
             program.mutate(resolver(unresolved_mark, top_level_mark, false));
+
+            let mut attributes = commonjs::ImportAttributes::new();
+            let mut dynamic_imports = Vec::new();
 
             if convert {
                 let top_level_await = commonjs::check_top_level_await(&program);
@@ -217,15 +245,23 @@ fn lower_module(source: &str, kind: Kind, target: EsVersion) -> Result<Lowered, 
                 }
 
                 commonjs::rewrite_import_meta(&mut program, unresolved_mark);
+
+                attributes = commonjs::collect_import_attributes(&program);
             }
 
-            program.mutate(transform_from_es_version(
-                unresolved_mark,
-                Some(&comments),
-                target,
-                Assumptions::default(),
-                false,
-            ));
+            if format == Format::Cjs {
+                dynamic_imports = commonjs::rewrite_dynamic_imports(&mut program, unresolved_mark);
+            }
+
+            if target != EsVersion::EsNext {
+                program.mutate(transform_from_es_version(
+                    unresolved_mark,
+                    Some(&comments),
+                    target,
+                    Assumptions::default(),
+                    false,
+                ));
+            }
 
             if convert {
                 program.mutate(common_js::common_js(
@@ -233,17 +269,20 @@ fn lower_module(source: &str, kind: Kind, target: EsVersion) -> Result<Lowered, 
                     unresolved_mark,
                     common_js::Config {
                         import_interop: Some(ImportInterop::Swc),
+                        ignore_dynamic: true,
                         ..Default::default()
                     },
                     FeatureFlag::default(),
                 ));
+
+                commonjs::restore_import_attributes(&mut program, &attributes, unresolved_mark);
             }
 
             program.mutate(inject_helpers(unresolved_mark));
             program.mutate(hygiene());
             program.mutate(fixer(Some(&comments)));
 
-            Ok(())
+            Ok(dynamic_imports)
         })
     })?;
 
@@ -263,5 +302,6 @@ fn lower_module(source: &str, kind: Kind, target: EsVersion) -> Result<Lowered, 
     Ok(Lowered {
         code: String::from_utf8(code).expect("Codegen produced invalid UTF-8"),
         converted: convert,
+        dynamic_imports,
     })
 }

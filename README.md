@@ -21,7 +21,9 @@ lower(bundle, { target: 'es5' }).read('/main.mjs').toString()
 
 Only syntax is lowered. Runtime APIs, such as `Promise`, `Symbol`, and `WeakMap`, are not polyfilled and must be provided by the target engine. The helpers that lowered syntax relies on are inlined into each module that uses them.
 
-ES modules are converted to CommonJS when lowering to a target without ES modules, which is any target before ES2015. Converted modules are recorded with type `script` and resolve their imports with the `require` condition in place of the `import` condition. Their `import.meta` properties are rewritten to their CommonJS equivalents: `url` to `module.url.href`, `main` to `require.main === module`, `cache` to `require.cache`, `dirname` to `__dirname`, `filename` to `__filename`, `resolve()` to `require.resolve()`, `addon()` to `require.addon()`, and `asset()` to `require.asset()`. Top-level `await` cannot be converted and is reported as an error.
+Modules are produced in one of two formats, set with `format`. With `esm`, the default for every target but `es5`, ES modules stay ES modules. With `cjs`, the default and only option for `es5`, the bundle loads without ES module support, which suits engines that support modern syntax but no ES modules, such as `JavaScriptCore.framework`. For example, `{ target: 'esnext', format: 'cjs' }` converts module syntax and nothing else.
+
+With `cjs`, ES modules are converted to CommonJS and `import()` is converted to `require()` in every module, including CommonJS modules. Lowered modules are recorded with type `script`, and the imports converted to `require()` resolve with the `require` condition in place of the `import` condition. Import attributes are passed on to `require()`. The `import.meta` properties of converted modules are rewritten to their CommonJS equivalents: `url` to `module.url.href`, `main` to `require.main === module`, `cache` to `require.cache`, `dirname` to `__dirname`, `filename` to `__filename`, `resolve()` to `require.resolve()`, `addon()` to `require.addon()`, and `asset()` to `require.asset()`. Top-level `await` cannot be converted and is reported as an error.
 
 ## License
 

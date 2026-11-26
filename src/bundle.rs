@@ -102,18 +102,20 @@ impl<'a> Bundle<'a> {
             .filter_map(Value::as_str)
     }
 
-    // A module lowered from ESM to CommonJS resolves its imports with the
-    // `require` condition rather than the `import` condition, so swap the two
-    // to keep resolving to the same files.
-    pub fn resolve_imports_as_requires(&mut self, url: &str) {
+    // An import lowered to `require()` resolves with the `require` condition
+    // rather than the `import` condition, so swap the two to keep resolving to
+    // the same files. Without `specifiers`, every import of the module swaps.
+    pub fn resolve_imports_as_requires(&mut self, url: &str, specifiers: Option<&[String]>) {
         let imports = self
             .header
             .get_mut("resolutions")
             .and_then(|resolutions| resolutions.get_mut(url))
             .and_then(Value::as_object_mut);
 
-        for entry in imports.into_iter().flat_map(|imports| imports.values_mut()) {
-            rename_import_conditions(entry);
+        for (specifier, entry) in imports.into_iter().flatten() {
+            if specifiers.is_none_or(|specifiers| specifiers.contains(specifier)) {
+                rename_import_conditions(entry);
+            }
         }
     }
 

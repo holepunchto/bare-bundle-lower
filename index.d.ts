@@ -15,12 +15,19 @@ type LowerTarget =
   | 'es2024'
   | 'esnext'
 
+type LowerFormat = 'esm' | 'cjs'
+
 interface LowerOptions {
   /**
-   * The ECMAScript version to lower syntax to (default `'es5'`). Targets before `es2015` don't
-   * support ES modules, so ES modules are also converted to CommonJS.
+   * The ECMAScript version to lower syntax to (default `'es5'`).
    */
   target?: LowerTarget
+  /**
+   * The module format to produce (default `'cjs'` for `es5` and `'esm'` otherwise). With `'cjs'`,
+   * ES modules are converted to CommonJS and `import()` is converted to `require()` in every
+   * module, for engines that support neither. `es5` only supports `'cjs'`.
+   */
+  format?: LowerFormat
 }
 
 interface LowerDiagnostic {
@@ -42,7 +49,7 @@ interface LowerDiagnostic {
 declare function lower(bundle: Bundle | Buffer, opts?: LowerOptions): Bundle
 
 declare namespace lower {
-  export { type LowerTarget, type LowerOptions, type LowerDiagnostic }
+  export { type LowerTarget, type LowerFormat, type LowerOptions, type LowerDiagnostic }
 }
 
 export = lower

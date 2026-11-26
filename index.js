@@ -16,16 +16,24 @@ const targets = new Set([
   'esnext'
 ])
 
+const formats = new Set(['esm', 'cjs'])
+
 module.exports = function lower(bundle, opts = {}) {
-  const { target = 'es5' } = opts
+  const { target = 'es5', format = target === 'es5' ? 'cjs' : 'esm' } = opts
 
   if (!targets.has(target)) throw new TypeError(`Unknown target '${target}'`)
+
+  if (!formats.has(format)) throw new TypeError(`Unknown format '${format}'`)
+
+  if (target === 'es5' && format === 'esm') {
+    throw new TypeError(`Target '${target}' does not support ES modules`)
+  }
 
   if (!Bundle.isBundle(bundle)) bundle = Bundle.from(bundle)
 
   const input = bundle.toBuffer()
 
-  const result = binding.lower(input.buffer, input.byteOffset, input.byteLength, target)
+  const result = binding.lower(input.buffer, input.byteOffset, input.byteLength, target, format)
 
   if (result.diagnostics) throw createError(bundle, result.diagnostics)
 

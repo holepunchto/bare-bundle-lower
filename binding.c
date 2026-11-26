@@ -15,6 +15,7 @@ typedef struct {
 
 typedef struct {
   bare_bundle_lower_string_t target;
+  bare_bundle_lower_string_t format;
 } bare_bundle_lower_options_t;
 
 typedef struct {
@@ -142,8 +143,8 @@ static js_value_t *
 bare_bundle_lower_lower(js_env_t *env, js_callback_info_t *info) {
   int err;
 
-  size_t argc = 4;
-  js_value_t *argv[4];
+  size_t argc = 5;
+  js_value_t *argv[5];
 
   err = js_get_callback_info(env, info, &argc, argv, NULL, NULL);
   assert(err == 0);
@@ -205,6 +206,16 @@ bare_bundle_lower_lower(js_env_t *env, js_callback_info_t *info) {
     return NULL;
   }
 
+  bare_bundle_lower_string_t format;
+  if (bare_bundle_lower__get_string(env, argv[4], &format) < 0) {
+    free((void *) target.data);
+
+    err = js_throw_type_error(env, NULL, "Format must be a string");
+    assert(err == 0);
+
+    return NULL;
+  }
+
   const uint8_t *input = (const uint8_t *) data + offset;
 
   // The lowering reads the input as UTF-8 text and must not see it change
@@ -216,6 +227,7 @@ bare_bundle_lower_lower(js_env_t *env, js_callback_info_t *info) {
 
     if (copy == NULL) {
       free((void *) target.data);
+      free((void *) format.data);
 
       err = js_throw_error(env, NULL, "Out of memory");
       assert(err == 0);
@@ -230,6 +242,7 @@ bare_bundle_lower_lower(js_env_t *env, js_callback_info_t *info) {
 
   bare_bundle_lower_options_t options = {
     .target = target,
+    .format = format,
   };
 
   bare_bundle_lower_result_t result;
@@ -238,6 +251,7 @@ bare_bundle_lower_lower(js_env_t *env, js_callback_info_t *info) {
   free(copy);
 
   free((void *) target.data);
+  free((void *) format.data);
 
   js_value_t *output;
   err = js_create_object(env, &output);
