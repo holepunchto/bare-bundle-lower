@@ -1,6 +1,6 @@
 {
   "name": "bare-bundle-lower",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Lower the syntax of the modules of a Bare bundle",
   "exports": {
     "./package": "./package.json",
