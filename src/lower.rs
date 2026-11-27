@@ -124,7 +124,35 @@ pub fn lower(input: &[u8], options: &Options) -> Result<Vec<u8>, Vec<Diagnostic>
         return Err(diagnostics);
     }
 
-    for (url, specifiers) in requires {
+    // A module that keeps its own `require()` calls shares their resolutions
+    // with its lowered imports, which can't tell them apart once lowered.
+    for (url, imports) in &requires {
+        for (specifier, start, end) in imports.iter().flatten() {
+            if bundle.resolves_differently_as_require(url, specifier) {
+                diagnostics.push(Diagnostic {
+                    url: url.clone(),
+                    start: *start,
+                    end: *end,
+                    message: format!(
+                        "Cannot lower import of '{specifier}' as it resolves to a different module for require()"
+                    ),
+                });
+            }
+        }
+    }
+
+    if !diagnostics.is_empty() {
+        return Err(diagnostics);
+    }
+
+    for (url, imports) in requires {
+        let specifiers: Option<Vec<String>> = imports.map(|imports| {
+            imports
+                .into_iter()
+                .map(|(specifier, _, _)| specifier)
+                .collect()
+        });
+
         bundle.resolve_imports_as_requires(&url, specifiers.as_deref());
     }
 
@@ -164,7 +192,7 @@ fn kind_for_extension(url: &str) -> Option<Kind> {
 struct Lowered {
     code: String,
     converted: bool,
-    dynamic_imports: Vec<String>,
+    dynamic_imports: Vec<(String, u32, u32)>,
 }
 
 type Errors = Vec<(u32, u32, String)>;
@@ -302,6 +330,12 @@ fn lower_module(source: &str, kind: Kind, options: &Options) -> Result<Lowered, 
     Ok(Lowered {
         code: String::from_utf8(code).expect("Codegen produced invalid UTF-8"),
         converted: convert,
-        dynamic_imports,
+        dynamic_imports: dynamic_imports
+            .into_iter()
+            .map(|(specifier, span)| {
+                let (start, end) = offset(span);
+                (specifier, start, end)
+            })
+            .collect(),
     })
 }

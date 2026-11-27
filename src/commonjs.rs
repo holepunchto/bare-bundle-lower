@@ -159,8 +159,11 @@ fn import_meta_property(expr: &Expr) -> Option<(Span, &str)> {
 }
 
 // Rewrite `import()` to `require()` in a promise and return the specifiers of
-// the imports that are string literals.
-pub fn rewrite_dynamic_imports(program: &mut Program, unresolved_mark: Mark) -> Vec<String> {
+// the imports that are string literals, along with their spans.
+pub fn rewrite_dynamic_imports(
+    program: &mut Program,
+    unresolved_mark: Mark,
+) -> Vec<(String, Span)> {
     let mut visitor = DynamicImports {
         ctxt: SyntaxContext::empty().apply_mark(unresolved_mark),
         specifiers: Vec::new(),
@@ -173,7 +176,7 @@ pub fn rewrite_dynamic_imports(program: &mut Program, unresolved_mark: Mark) -> 
 
 struct DynamicImports {
     ctxt: SyntaxContext,
-    specifiers: Vec<String>,
+    specifiers: Vec<(String, Span)>,
 }
 
 impl VisitMut for DynamicImports {
@@ -202,7 +205,7 @@ impl VisitMut for DynamicImports {
         let (resolved, params, specifier) = match &*specifier.expr {
             Expr::Lit(Lit::Str(literal)) => {
                 self.specifiers
-                    .push(literal.value.to_atom_lossy().to_string());
+                    .push((literal.value.to_atom_lossy().to_string(), literal.span));
 
                 (Vec::new(), Vec::new(), specifier)
             }
