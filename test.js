@@ -90,7 +90,7 @@ test('import() is converted to require() in every module with the cjs format', a
         main: true,
         imports: {
           required: { require: '/dep.cjs', import: '/wrong.cjs' },
-          imported: { require: '/wrong.cjs', import: '/dep.cjs' },
+          imported: { import: '/dep.cjs', default: '/dep.cjs' },
           './module.mjs': '/module.mjs'
         }
       }
@@ -106,7 +106,7 @@ test('import() is converted to require() in every module with the cjs format', a
   t.is(lowered.type('/main.cjs'), 'script')
   t.alike(lowered.resolutions['/main.cjs'], {
     required: { require: '/dep.cjs', import: '/wrong.cjs' },
-    imported: { require: '/dep.cjs' },
+    imported: { require: '/dep.cjs', default: '/dep.cjs' },
     './module.mjs': '/module.mjs'
   })
 
@@ -150,6 +150,42 @@ test('converted modules resolve their imports with the require condition', (t) =
   t.alike(lower(bundle).resolutions, {
     '/main.mjs': { dep: { bare: { require: '/dep.mjs', default: '/dep.cjs' } } }
   })
+})
+
+test('imports that resolve to a different module for require() cannot be lowered', (t) => {
+  const lowerWith = (dep) =>
+    lower(
+      new Bundle()
+        .write('/main.cjs', "module.exports = [require('dep'), import('dep')]", {
+          main: true,
+          imports: { dep }
+        })
+        .write('/dep.mjs', 'export default 1')
+        .write('/dep.cjs', 'module.exports = 1'),
+      { target: 'esnext', format: 'cjs' }
+    )
+
+  const conflicts = [
+    { require: '/dep.cjs', import: '/dep.mjs' },
+    { import: '/dep.mjs', default: '/dep.cjs' },
+    { bare: { import: '/dep.mjs', require: '/dep.cjs' } }
+  ]
+
+  for (const dep of conflicts) {
+    t.exception.all(
+      () => lowerWith(dep),
+      /Cannot lower import of 'dep' as it resolves to a different module for require\(\) at \/main\.cjs:1:42$/
+    )
+  }
+
+  const agreements = [
+    '/dep.cjs',
+    { import: '/dep.cjs', require: '/dep.cjs' },
+    { import: '/dep.cjs', default: '/dep.cjs' },
+    { bare: { import: '/dep.cjs', require: '/dep.cjs' }, default: '/dep.mjs' }
+  ]
+
+  for (const dep of agreements) t.execution(() => lowerWith(dep))
 })
 
 test('import.meta is rewritten to the CommonJS bindings of Bare', (t) => {

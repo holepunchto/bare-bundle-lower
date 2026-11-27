@@ -119,6 +119,19 @@ impl<'a> Bundle<'a> {
         }
     }
 
+    pub fn resolves_differently_as_require(&self, url: &str, specifier: &str) -> bool {
+        let Some(entry) = self
+            .header
+            .get("resolutions")
+            .and_then(|resolutions| resolutions.get(url))
+            .and_then(|imports| imports.get(specifier))
+        else {
+            return false;
+        };
+
+        view(entry, "import", "require") != view(entry, "require", "import")
+    }
+
     pub fn serialize(mut self) -> Vec<u8> {
         let mut entries = Map::new();
         let mut offset = 0;
@@ -163,6 +176,48 @@ impl<'a> Bundle<'a> {
         }
 
         output
+    }
+}
+
+#[derive(PartialEq)]
+enum View<'a> {
+    Target(&'a Value),
+    Targets(Vec<View<'a>>),
+    Conditions(Vec<(&'a str, View<'a>)>),
+}
+
+// What `entry` resolves to when `matched` is among the conditions and
+// `excluded` isn't. Conditions match in order with no fallback, so `matched`
+// acts as `default`, and the conditions after either are never reached.
+fn view<'a>(entry: &'a Value, matched: &str, excluded: &str) -> View<'a> {
+    match entry {
+        Value::Object(conditions) => {
+            let mut result = Vec::new();
+
+            for (condition, target) in conditions {
+                if condition == excluded {
+                    continue;
+                }
+
+                let target = view(target, matched, excluded);
+
+                if condition == matched || condition == "default" {
+                    result.push(("default", target));
+                    break;
+                }
+
+                result.push((condition.as_str(), target));
+            }
+
+            View::Conditions(result)
+        }
+        Value::Array(targets) => View::Targets(
+            targets
+                .iter()
+                .map(|target| view(target, matched, excluded))
+                .collect(),
+        ),
+        _ => View::Target(entry),
     }
 }
 
